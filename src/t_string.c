@@ -65,6 +65,7 @@ static int checkStringLength(redisClient *c, long long size) {
 void setGenericCommand(redisClient *c, int flags, robj *key, robj *val, robj *expire, int unit, robj *ok_reply, robj *abort_reply) {
     long long milliseconds = 0; /* initialized to avoid any harmness warning */
 
+    // key被冻结，不能设置
     if(isKeyFreezed(c->db->id, key) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -93,6 +94,7 @@ void setGenericCommand(redisClient *c, int flags, robj *key, robj *val, robj *ex
     if (expire) notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC,
         "expire",key,c->db->id);
     addReply(c, ok_reply ? ok_reply : shared.ok);
+    // 设置key之后，立刻更新leveldb对应数据
     leveldbSetDirect(c->db->id, &server.ldb, key, val);
 }
 
@@ -186,6 +188,7 @@ void getsetCommand(redisClient *c) {
     
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setKey(c->db,c->argv[1],c->argv[2]);
+    // 更新key之后，立刻更新leveldb中的对应数据
     leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], c->argv[2]);
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",c->argv[1],c->db->id);
     server.dirty++;
@@ -203,7 +206,8 @@ void setrangeCommand(redisClient *c) {
         addReplyError(c,"offset is out of range");
         return;
     }
-    
+
+    // 更新key之后，立刻更新leveldb中的对应数据
     if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -252,6 +256,7 @@ void setrangeCommand(redisClient *c) {
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,
             "setrange",c->argv[1],c->db->id);
         server.dirty++;
+        // 更新key之后，立刻更新leveldb中的对应数据
         leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], o);
     }
     addReplyLongLong(c,sdslen(o->ptr));
@@ -322,6 +327,7 @@ void msetGenericCommand(redisClient *c, int nx) {
     }
     /* Handle the NX flag. The MSETNX semantic is to return zero and don't
      * set nothing at all if at least one already key exists. */
+    // 冻结key不处理，处理其他的key
     if (nx) {
         for (j = 1; j < c->argc; j += 2) {
             if (lookupKeyWrite(c->db,c->argv[j]) != NULL || isKeyFreezed(c->db->id, c->argv[j]) == 1) {
@@ -352,6 +358,7 @@ void msetGenericCommand(redisClient *c, int nx) {
     for (j = 1; j < c->argc; j += 2) {
         c->argv[j+1] = tryObjectEncoding(c->argv[j+1]);
         setKey(c->db,c->argv[j],c->argv[j+1]);
+        // 设置完成立刻更新leveldb
         leveldbSetDirect(c->db->id, &server.ldb, c->argv[j], c->argv[j+1]);
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",c->argv[j],c->db->id);
     }
@@ -370,7 +377,8 @@ void msetnxCommand(redisClient *c) {
 void incrDecrCommand(redisClient *c, long long incr) {
     long long value, oldvalue;
     robj *o, *new;
-    
+
+    // 冻结key不能增减
     if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -398,6 +406,7 @@ void incrDecrCommand(redisClient *c, long long incr) {
     addReply(c,shared.colon);
     addReply(c,new);
     addReply(c,shared.crlf);
+    // 增减成功，更新leveldb
     leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], new);
 }
 
@@ -426,7 +435,7 @@ void decrbyCommand(redisClient *c) {
 void incrbyfloatCommand(redisClient *c) {
     long double incr, value;
     robj *o, *new, *aux;
-    
+    // 冻结key不能增减
     if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -452,6 +461,7 @@ void incrbyfloatCommand(redisClient *c) {
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"incrbyfloat",c->argv[1],c->db->id);
     server.dirty++;
     addReplyBulk(c,new);
+    // 增减成功，更新leveldb
     leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], new);
 
     /* Always replicate INCRBYFLOAT as a SET command with the final value
@@ -466,7 +476,8 @@ void incrbyfloatCommand(redisClient *c) {
 void appendCommand(redisClient *c) {
     size_t totlen;
     robj *o, *append;
-    
+
+    // 冻结key不能拼接
     if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -479,6 +490,7 @@ void appendCommand(redisClient *c) {
         dbAdd(c->db,c->argv[1],c->argv[2]);
         incrRefCount(c->argv[2]);
         totlen = stringObjectLen(c->argv[2]);
+        // 拼接成功，更新leveldb
         leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], c->argv[2]);
     } else {
         /* Key exists, check type */
@@ -495,6 +507,7 @@ void appendCommand(redisClient *c) {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
         o->ptr = sdscatlen(o->ptr,append->ptr,sdslen(append->ptr));
         totlen = sdslen(o->ptr);
+        // 拼接成功，更新leveldb
         leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], o);
     }
     signalModifiedKey(c->db,c->argv[1]);

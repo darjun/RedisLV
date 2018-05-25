@@ -173,6 +173,7 @@ void *bioProcessBackgroundJobs(void *arg) {
 
         /* Process the job accordingly to its type. */
         if (type == REDIS_BIO_LEVELDB_BACKUP) {
+            // 备份leveldb的任务，参数为备份路径
             backupleveldb(job->arg1);
         } else if (type == REDIS_BIO_CLOSE_FILE) {
             close((long)job->arg1);

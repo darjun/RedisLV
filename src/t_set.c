@@ -253,6 +253,7 @@ void saddCommand(redisClient *c) {
 
     set = lookupKeyWrite(c->db,c->argv[1]);
     if (set == NULL) {
+        // key被冻结，不能创建
         if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
             addReply(c,shared.keyfreezederr);
             return;
@@ -276,6 +277,7 @@ void saddCommand(redisClient *c) {
     }
     server.dirty += added;
     addReplyLongLong(c,added);
+    // set添加元素之后，同时写入leveldb
     leveldbSadd(c->db->id,&server.ldb,c->argv,c->argc);
 }
 
@@ -304,6 +306,7 @@ void sremCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
+    // set删除元素后，同时删除leveldb中对应数据
     leveldbSrem(c->db->id,&server.ldb,c->argv,c->argc);
 }
 

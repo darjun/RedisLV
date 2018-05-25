@@ -399,6 +399,7 @@ robj *hashTypeCurrentObject(hashTypeIterator *hi, int what) {
 robj *hashTypeLookupWriteOrCreate(redisClient *c, robj *key) {
     robj *o = lookupKeyWrite(c->db,key);
     if (o == NULL) {
+        // 如果key被冻结，不能创建
         if(isKeyFreezed(c->db->id, key) == 1) {
             addReply(c,shared.keyfreezederr);
             return NULL;
@@ -479,6 +480,7 @@ void hsetCommand(redisClient *c) {
     hashTypeTryObjectEncoding(o,&c->argv[2], &c->argv[3]);
     update = hashTypeSet(o,c->argv[2],c->argv[3]);
     addReply(c, update ? shared.czero : shared.cone);
+    // 设置hash的field之后，立刻更新leveldb对应数据
     leveldbHset(c->db->id,&server.ldb,c->argv);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hset",c->argv[1],c->db->id);
@@ -496,6 +498,7 @@ void hsetnxCommand(redisClient *c) {
         hashTypeTryObjectEncoding(o,&c->argv[2], &c->argv[3]);
         hashTypeSet(o,c->argv[2],c->argv[3]);
         addReply(c, shared.cone);
+        // 设置hash的field之后，立刻更新leveldb对应数据
         leveldbHset(c->db->id,&server.ldb, c->argv);
         signalModifiedKey(c->db,c->argv[1]);
         notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hset",c->argv[1],c->db->id);
@@ -520,6 +523,7 @@ void hmsetCommand(redisClient *c) {
         hashTypeSet(o,c->argv[i],c->argv[i+1]);
     }
     addReply(c, shared.ok);
+    // 批量设置hash的field之后，立刻更新leveldb对应数据
     leveldbHmset(c->db->id,&server.ldb,c->argv,c->argc);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hset",c->argv[1],c->db->id);
@@ -556,6 +560,7 @@ void hincrbyCommand(redisClient *c) {
     hashTypeSet(o,c->argv[2],new);
     decrRefCount(new);
     addReplyLongLong(c,value);
+    // 设置hash的field之后，立刻更新leveldb对应数据
     leveldbHsetDirect(c->db->id,&server.ldb,c->argv[1],c->argv[2],new);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hincrby",c->argv[1],c->db->id);
@@ -584,6 +589,7 @@ void hincrbyfloatCommand(redisClient *c) {
     hashTypeTryObjectEncoding(o,&c->argv[2],NULL);
     hashTypeSet(o,c->argv[2],new);
     addReplyBulk(c,new);
+    // 设置hash的field之后，立刻更新leveldb对应数据
     leveldbHsetDirect(c->db->id,&server.ldb,c->argv[1],c->argv[2],new);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hincrbyfloat",c->argv[1],c->db->id);
@@ -691,6 +697,7 @@ void hdelCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
+    // 删除hash的field之后，立刻删除leveldb对应数据
     leveldbHdel(c->db->id,&server.ldb,c->argv,c->argc);
 }
 

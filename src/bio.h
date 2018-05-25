@@ -38,5 +38,6 @@ void bioKillThreads(void);
 /* Background job opcodes */
 #define REDIS_BIO_CLOSE_FILE          0 /* Deferred close(2) syscall. */
 #define REDIS_BIO_AOF_FSYNC           1 /* Deferred AOF fsync. */
+// 可以通过redis客户端发送备份leveldb到指定目录的指令，文件操作很费时，只能以后台任务运行
 #define REDIS_BIO_LEVELDB_BACKUP      2 /* Deferred LEVELDB backup. */
 #define REDIS_BIO_NUM_OPS             3

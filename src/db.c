@@ -213,6 +213,7 @@ long long emptyDb(void(callback)(void*)) {
         removed += dictSize(server.db[j].dict);
         dictEmpty(server.db[j].dict,callback);
         dictEmpty(server.db[j].expires,callback);
+        // 每个db新增的冻结dict也需要清空
         dictEmpty(server.db[j].freezed,NULL);
     }
     return removed;
@@ -251,8 +252,10 @@ void flushdbCommand(redisClient *c) {
     signalFlushedDb(c->db->id);
     dictEmpty(c->db->dict,NULL);
     dictEmpty(c->db->expires,NULL);
+    // 删除db需要清空freezed
     dictEmpty(c->db->freezed,NULL);
     addReply(c,shared.ok);
+    // flush db需要将leveldb中该db的key都删除
     leveldbFlushdb(c->db->id, &server.ldb);
 }
 
@@ -272,6 +275,7 @@ void flushallCommand(redisClient *c) {
         server.dirty = saved_dirty;
     }
     server.dirty++;
+    // 删除所有db，将leveldb中所有key删除
     leveldbFlushall(&server.ldb);
 }
 
@@ -281,6 +285,7 @@ void delCommand(redisClient *c) {
 
     for (j = 1; j < c->argc; j++) {
 
+        // 删除某个key时，根据key的类型，将leveldb中关联的数据删除
         o = lookupKeyRead(c->db,c->argv[j]);
         if (o != NULL) {
           switch(o->type) {

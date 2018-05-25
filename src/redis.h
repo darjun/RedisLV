@@ -66,6 +66,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #include "latency.h" /* Latency monitor API */
 #include "sparkline.h" /* ASII graphs API */
 
+// 包含leveldb c binding头文件
 #include <leveldb/c.h>
 
 /* Error codes */
@@ -180,6 +181,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define REDIS_CMD_SKIP_MONITOR 2048         /* "M" flag */
 #define REDIS_CMD_ASKING 4096               /* "k" flag */
 #define REDIS_CMD_FAST 8192                 /* "F" flag */
+// leveldb命令禁止标志
 #define REDIS_CMD_FORBID_LEVELDB   1 << 31      /* "f" flag */
 
 /* Object types */
@@ -234,6 +236,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define REDIS_AOF_WAIT_REWRITE 2    /* AOF waits rewrite to start appending */
 
 /* leveldb states */
+// leveldb状态
 #define REDIS_LEVELDB_OFF 0             /* LEVELDB is off */
 #define REDIS_LEVELDB_ON 1              /* LEVELDB is on */
 
@@ -439,6 +442,7 @@ typedef struct redisDb {
     dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS */
     int id;
     long long avg_ttl;          /* Average TTL, just for stats */
+    // 每个db新增一个freezed，表示冻结key
     dict *freezed;              /* The keyspace for freezed key for this db */
 } redisDb;
 
@@ -603,11 +607,15 @@ typedef struct redisOpArray {
     int numops;
 } redisOpArray;
 
+// leveldb结构
 struct leveldb {
+  // 表示打开的db
   leveldb_t *db;
+  // 选项，读选项，写选项
   leveldb_options_t *options;
   leveldb_readoptions_t *roptions;
   leveldb_writeoptions_t *woptions;
+  // 仿造客户端
   struct redisClient *fakeClient;
 };
 
@@ -853,9 +861,13 @@ struct redisServer {
     int bug_report_start; /* True if bug report header was already logged. */
     int watchdog_period;  /* Software watchdog period in ms. 0 = off */
 
+    // leveldb状态
     int leveldb_state;   
+    // leveldb存储文件路径
     char *leveldb_path; 
+    // leveldb结构
     struct leveldb ldb;
+    // leveldb操作计数
     long long leveldb_op_num;
 };
 
@@ -946,6 +958,7 @@ typedef struct {
 
 extern struct redisServer server;
 extern struct sharedObjectsStruct shared;
+// 冻结dict的操作type
 extern dictType freezedDictType;
 extern dictType setDictType;
 extern dictType zsetDictType;
@@ -1133,6 +1146,7 @@ void backgroundRewriteDoneHandler(int exitcode, int bysignal);
 void aofRewriteBufferReset(void);
 unsigned long aofRewriteBufferSize(void);
 
+// 从leveldb加载数据是通过仿造客户端模拟向redis发送命令来设置数据的
 struct redisClient *createFakeClient(void);
 void freeFakeClientArgv(struct redisClient *c); 
 void freeFakeClient(struct redisClient *c); 
@@ -1454,6 +1468,7 @@ void pfcountCommand(redisClient *c);
 void pfmergeCommand(redisClient *c);
 void pfdebugCommand(redisClient *c);
 void latencyCommand(redisClient *c);
+// leveldb命令处理函数
 void backupCommand(redisClient *c);
 void freezeCommand(redisClient *c);
 void meltCommand(redisClient *c);

@@ -212,6 +212,7 @@ void loadServerConfigFromString(char *config) {
             }
         } else if (!strcasecmp(argv[0],"databases") && argc == 2) {
             server.dbnum = atoi(argv[1]);
+            // 因为写入leveldb的key都会增加头部元信息，dbid用一个字节表示，最大为256
             if (server.dbnum < 1 || server.dbnum > 256) {
                 err = "Invalid number of databases"; goto loaderr;
             }
@@ -335,6 +336,8 @@ void loadServerConfigFromString(char *config) {
             zfree(server.aof_filename);
             server.aof_filename = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"leveldb") && argc == 2) {
+            // leveldb配置，开启或关闭
+            // leveldb yes/no
             int yes;
 
             if ((yes = yesnotoi(argv[1])) == -1) {
@@ -342,6 +345,7 @@ void loadServerConfigFromString(char *config) {
             }
             server.leveldb_state = yes ? REDIS_LEVELDB_ON : REDIS_LEVELDB_OFF;
         } else if (!strcasecmp(argv[0],"leveldb-path") && argc == 2) {
+            // leveldb存储文件路径
             zfree(server.leveldb_path);
             server.leveldb_path = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"no-appendfsync-on-rewrite")
@@ -562,6 +566,7 @@ void loadServerConfig(char *filename, char *options) {
         config = sdscat(config,options);
     }
     loadServerConfigFromString(config);
+    // 添加leveldb的命令禁止标志f
     populateCommandTableForleveldb();  //禁止leveldb引擎使用的命令
     sdsfree(config);
 }
@@ -909,6 +914,7 @@ void configSetCommand(redisClient *c) {
         server.repl_min_slaves_max_lag = ll;
         refreshGoodSlavesCount();
     } else if (!strcasecmp(c->argv[2]->ptr,"leveldb")) {
+      // 设置leveldb开启关闭状态
       int yn = yesnotoi(o->ptr);
 
       if (yn == -1) goto badfmt;
@@ -971,6 +977,7 @@ void configGetCommand(redisClient *c) {
     config_get_string_field("unixsocket",server.unixsocket);
     config_get_string_field("logfile",server.logfile);
     config_get_string_field("pidfile",server.pidfile);
+    // 配置获取leveldb-path配置
     config_get_string_field("leveldb-path",server.leveldb_path);
 
     /* Numerical values */
@@ -1049,6 +1056,7 @@ void configGetCommand(redisClient *c) {
         addReplyBulkCString(c,server.aof_state == REDIS_AOF_OFF ? "no" : "yes");
         matches++;
     }
+    // 配置获取leveldb开启状态配置
     if (stringmatch(pattern,"leveldb",0)) {
         addReplyBulkCString(c,"leveldb");
         addReplyBulkCString(c,server.leveldb_state == REDIS_LEVELDB_OFF ? "no" : "yes");

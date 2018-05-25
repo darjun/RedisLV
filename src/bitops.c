@@ -205,6 +205,7 @@ void setbitCommand(redisClient *c) {
     int byteval, bitval;
     long on;
     
+    // 如果key被冻结，不能设置这个key，直接返回错误
     if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -248,6 +249,8 @@ void setbitCommand(redisClient *c) {
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"setbit",c->argv[1],c->db->id);
     server.dirty++;
     addReply(c, bitval ? shared.cone : shared.czero);
+
+    // 设置完成之后立刻写leveldb
     leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], o);
 }
 
@@ -290,6 +293,7 @@ void bitopCommand(redisClient *c) {
     unsigned long minlen = 0;    /* Min len among the input keys. */
     unsigned char *res = NULL; /* Resulting string. */
 
+    // 目标key被冻结，不能设置，直接返回错误
     if(isKeyFreezed(c->db->id, c->argv[2]) == 1) {
         addReply(c,shared.keyfreezederr);
         return;
@@ -321,6 +325,7 @@ void bitopCommand(redisClient *c) {
     len = zmalloc(sizeof(long) * numkeys);
     objects = zmalloc(sizeof(robj*) * numkeys);
     for (j = 0; j < numkeys; j++) {
+        // 如果操作对象中有冻结key，返回错误。注意释放资源
         if(isKeyFreezed(c->db->id, c->argv[j+3]) == 1) {
             addReply(c,shared.keyfreezederr);
             unsigned long i;
@@ -460,10 +465,12 @@ void bitopCommand(redisClient *c) {
     if (maxlen) {
         o = createObject(REDIS_STRING,res);
         setKey(c->db,targetkey,o);
+        // 设置完成之后，立刻写leveldb
         leveldbSetDirect(c->db->id, &server.ldb, targetkey, o);
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",targetkey,c->db->id);
         decrRefCount(o);
     } else if (dbDelete(c->db,targetkey)) {
+        // 目标key全0，被删除了。立刻从leveldb中删除。
         leveldbDelString(c->db->id, &server.ldb, targetkey);
         signalModifiedKey(c->db,targetkey);
         notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC,"del",targetkey,c->db->id);

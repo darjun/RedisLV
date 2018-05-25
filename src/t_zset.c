@@ -312,6 +312,7 @@ unsigned long zslDeleteRangeByScore(int dbid, robj *key, zskiplist *zsl, zranges
     {
         zskiplistNode *next = x->level[0].forward;
         zslDeleteNode(zsl,x,update);
+        // 删除成功，将leveldb中数据也删除掉
         leveldbZremByObject(dbid,&server.ldb,key,x->obj);
         dictDelete(dict,x->obj);
         zslFreeNode(x);
@@ -342,6 +343,7 @@ unsigned long zslDeleteRangeByLex(int dbid, robj* key, zskiplist *zsl, zlexrange
     while (x && zslLexValueLteMax(x->obj,range)) {
         zskiplistNode *next = x->level[0].forward;
         zslDeleteNode(zsl,x,update);
+        // 删除成功，将leveldb中数据也删除掉
         leveldbZremByObject(dbid,&server.ldb,key,x->obj);
         dictDelete(dict,x->obj);
         zslFreeNode(x);
@@ -372,6 +374,7 @@ unsigned long zslDeleteRangeByRank(int dbid, robj *key, zskiplist *zsl, unsigned
     while (x && traversed <= end) {
         zskiplistNode *next = x->level[0].forward;
         zslDeleteNode(zsl,x,update);
+        // 删除成功，将leveldb中数据也删除掉
         leveldbZremByObject(dbid,&server.ldb,key,x->obj);
         dictDelete(dict,x->obj);
         zslFreeNode(x);
@@ -1032,6 +1035,7 @@ unsigned char *zzlDeleteRangeByScore(int dbid, robj *key, unsigned char *zl, zra
         if (zslValueLteMax(score,range)) {
             /* Delete leveldb data */
             redisAssert(ziplistGet(eptr,&vstr,&vlen,&vlong));
+            // 删除成功，根据编码不同，调用不同方法将leveldb对应数据删除
             if (vstr == NULL)
                 leveldbZremByLongLong(dbid,&server.ldb,key,vlong);
             else
@@ -1068,6 +1072,7 @@ unsigned char *zzlDeleteRangeByLex(int dbid, robj *key, unsigned char *zl, zlexr
         if (zzlLexValueLteMax(eptr,range)) {
             /* Delete leveldb data */
             redisAssert(ziplistGet(eptr,&vstr,&vlen,&vlong));
+            // 删除成功，根据编码不同，调用不同方法将leveldb对应数据删除
             if (vstr == NULL)
                 leveldbZremByLongLong(dbid,&server.ldb,key,vlong);
             else
@@ -1103,6 +1108,7 @@ unsigned char *zzlDeleteRangeByRank(int dbid, robj *key, unsigned char *zl, unsi
     redisAssert(sptr != NULL);
     while (rangelen--) {
       redisAssert(ziplistGet(eptr,&vstr,&vlen,&vlong));
+      // 删除成功，根据编码不同，调用不同方法将leveldb对应数据删除
       if (vstr == NULL)
         leveldbZremByLongLong(dbid,&server.ldb,key,vlong);
       else
@@ -1239,6 +1245,7 @@ void zaddGenericCommand(redisClient *c, int incr) {
     /* Lookup the key and create the sorted set if does not exist. */
     zobj = lookupKeyWrite(c->db,key);
     if (zobj == NULL) {
+        // 冻结key不能创建
         if(isKeyFreezed(c->db->id, key) == 1) {
             addReply(c,shared.keyfreezederr);
             goto cleanup;
@@ -1340,9 +1347,11 @@ void zaddGenericCommand(redisClient *c, int incr) {
     }
     if (incr) /* ZINCRBY */ {
         addReplyDouble(c,score);
+        // zset添加成功，更新leveldb
         leveldbZaddDirect(c->db->id,&server.ldb, c->argv[1], c->argv[3], score);
     }else /* ZADD */ {
         addReplyLongLong(c,added);
+        // zset添加成功，更新leveldb
         leveldbZadd(c->db->id,&server.ldb, c->argv, c->argc);
     }
 
@@ -1421,6 +1430,7 @@ void zremCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
+    // zset删除成功，删除leveldb对应数据
     leveldbZrem(c->db->id,&server.ldb, c->argv, c->argc);
 }
 

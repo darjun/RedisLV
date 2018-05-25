@@ -117,6 +117,7 @@ struct redisServer server; /* server global state */
  *    Note that commands that may trigger a DEL as a side effect (like SET)
  *    are not fast commands.
  */
+// leveldb增加一个f，表示禁止的命令
 struct redisCommand redisCommandTable[] = {
     {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0},
     {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0},
@@ -275,9 +276,13 @@ struct redisCommand redisCommandTable[] = {
     {"pfmerge",pfmergeCommand,-2,"wm",0,NULL,1,-1,1,0,0},
     {"pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0},
     {"latency",latencyCommand,-2,"arslt",0,NULL,0,0,0,0,0},
+    // 冻结某些key命令
     {"freeze",freezeCommand,-2,"w",0,NULL,1,-1,1,0,0},
+    // 解冻某些key命令
     {"melt",meltCommand,-2,"w",0,NULL,1,-1,1,0,0},
+    // 获取符合参数模式的冻结key
     {"freezed",freezedCommand,2,"rS",0,NULL,0,0,0,0,0},
+    // 备份命令
     {"backup",backupCommand,2,"ar",0,NULL,0,0,0,0,0}
 };
 
@@ -506,6 +511,7 @@ unsigned int dictEncObjHash(const void *key) {
 }
 
 /* Freezed key hash table */
+// 冻结dict的type，key都是sds类型
 dictType freezedDictType = {
     dictSdsHash,                /* hash function */
     NULL,                       /* key dup */
@@ -625,6 +631,7 @@ void tryResizeHashTables(int dbid) {
         dictResize(server.db[dbid].dict);
     if (htNeedsResize(server.db[dbid].expires))
         dictResize(server.db[dbid].expires);
+    // 新增的freezed也需要判断是否需要resize
     if (htNeedsResize(server.db[dbid].freezed))
         dictResize(server.db[dbid].freezed);
 }
@@ -649,6 +656,7 @@ int incrementallyRehash(int dbid) {
     }
     /* Freezed */
     if (dictIsRehashing(server.db[dbid].freezed)) {
+        // 新增的freezed也要按需推进rehash
         dictRehashMilliseconds(server.db[dbid].freezed,1);
         return 1; /* already used our millisecond for this loop... */
     }
@@ -1288,6 +1296,7 @@ void createSharedObjects(void) {
     shared.space = createObject(REDIS_STRING,sdsnew(" "));
     shared.colon = createObject(REDIS_STRING,sdsnew(":"));
     shared.plus = createObject(REDIS_STRING,sdsnew("+"));
+    // 共享冻结key错误
     shared.keyfreezederr = createObject(REDIS_STRING,sdsnew(
         "-WKEYFREEZED Operation on a freezed key, pleasse melt it first.\r\n"));
 
@@ -1476,6 +1485,7 @@ void initServerConfig(void) {
     server.assert_line = 0;
     server.bug_report_start = 0;
     server.watchdog_period = 0;
+    // 初始化leveldb相关数据
     server.leveldb_state = REDIS_LEVELDB_OFF;
     server.leveldb_path = NULL;
     server.leveldb_op_num = 0;
@@ -1731,6 +1741,7 @@ void initServer(void) {
         server.db[j].watched_keys = dictCreate(&keylistDictType,NULL);
         server.db[j].id = j;
         server.db[j].avg_ttl = 0;
+        // 新建freezed字典
         server.db[j].freezed = dictCreate(&freezedDictType,NULL);
     }
     server.pubsub_channels = dictCreate(&keylistDictType,NULL);
@@ -1847,6 +1858,7 @@ void populateCommandTable(void) {
 }
 
 //set forbiden flag after server.leveldb_state inited
+// 设置leveldb命令禁止标志
 void populateCommandTableForleveldb(void) {
     int j;
     int numcommands = sizeof(redisCommandTable)/sizeof(struct redisCommand);
@@ -1995,6 +2007,7 @@ void call(redisClient *c, int flags) {
     dirty = server.dirty;
     start = ustime();
     //if true 说明是在leveldb下禁止的命令.直接回复error
+    // leveldb下禁止的命令不允许调用
     if (c->cmd->flags & REDIS_CMD_FORBID_LEVELDB) {
         addReplyErrorFormat(c,"command:%s invalid in leveldb", c->cmd->name);
     } else {
@@ -2277,6 +2290,7 @@ int prepareForShutdown(int flags) {
         redisLog(REDIS_NOTICE,"Calling fsync() on the AOF file.");
         aof_fsync(server.aof_fd);
     }
+    // 关闭leveldb
     if(server.leveldb_state != REDIS_LEVELDB_OFF) closeleveldb(&server.ldb);
     if ((server.saveparamslen > 0 && !nosave) || save) {
         redisLog(REDIS_NOTICE,"Saving the final RDB snapshot before exiting.");
@@ -2927,6 +2941,7 @@ sds genRedisInfoString(char *section) {
     }
 
     /* leveldb */
+    // 获取leveldb相关信息
     if (allsections || defsections || !strcasecmp(section,"leveldb")) {
       if (sections++) info = sdscat(info,"\r\n");
       info = sdscatprintf(info, "# leveldb\r\n");
@@ -3326,6 +3341,7 @@ int checkForSentinelMode(int argc, char **argv) {
 /* Function called at startup to load RDB or AOF file in memory. */
 void loadDataFromDisk(void) {
     long long start = ustime();
+    // 如果开启leveldb，从它的存储文件中加载
     if (server.leveldb_state == REDIS_LEVELDB_ON) {
         if (loadleveldb(server.leveldb_path) == REDIS_OK) { 
             redisLog(REDIS_NOTICE,"DB loaded from leveldb: %.3f seconds",(float)(ustime()-start)/1000000);
